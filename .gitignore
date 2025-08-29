@@ -61,3 +61,4 @@ temp/
 # Documentation build
 docs/_build/
 .github/instructions/blockchain.instructions.md
+.github/instructions/blockchainFE.instructions.md

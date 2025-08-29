@@ -65,6 +65,7 @@ export default function SellEnergyScreen() {
   const [onMarket, setOnMarket] = useState(null);
   const [isBuying, setIsBuying] = useState(false);
   const [sellMode, setSellMode] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -129,6 +130,8 @@ export default function SellEnergyScreen() {
       return;
     }
 
+    setIsSubmitting(true);
+
     try {
       const token = await AsyncStorage.getItem('token');
 
@@ -160,6 +163,8 @@ export default function SellEnergyScreen() {
       fetchData(); // refresh
     } catch (err) {
       Alert.alert("Error listing energy:", err.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -268,7 +273,9 @@ export default function SellEnergyScreen() {
           onPress={handleSellEnergy}
           disabled={!sellMode}
         >
-          <Text style={styles.buySellButtonText}>{translations[language].sellNow}</Text>
+          <Text style={styles.buySellButtonText}>
+            {isSubmitting ? "Creating Offer..." : translations[language].sellNow}
+          </Text>
         </TouchableOpacity>
       </UniversalScrollContainer>
     </UniversalSafeArea>

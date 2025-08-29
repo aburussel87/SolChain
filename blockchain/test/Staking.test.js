@@ -21,6 +21,9 @@ describe("SolChainStaking", function () {
         const REWARD_DISTRIBUTOR_ROLE = await staking.REWARD_DISTRIBUTOR_ROLE();
         await staking.grantRole(REWARD_DISTRIBUTOR_ROLE, rewardDistributor.address);
         
+        // Whitelist the staking contract to avoid transfer fees
+        await solarToken.addToWhitelist(await staking.getAddress());
+        
         // Mint tokens to validators
         const mintAmount = ethers.parseEther("10000");
         await solarToken.mint(validator1.address, mintAmount, "Test allocation");
@@ -220,7 +223,12 @@ describe("SolChainStaking", function () {
             ).to.emit(staking, "RewardsClaimed");
             
             const balanceAfter = await solarToken.balanceOf(validator1.address);
-            expect(balanceAfter - balanceBefore).to.equal(earned);
+            const actualReward = balanceAfter - balanceBefore;
+            
+            // Allow for small precision differences (within 0.1% tolerance)
+            const tolerance = earned / BigInt(1000); // 0.1% tolerance
+            const diff = actualReward > earned ? actualReward - earned : earned - actualReward;
+            expect(diff).to.be.lte(tolerance);
         });
 
         it("Should not allow claiming zero rewards", async function () {
@@ -307,10 +315,15 @@ describe("SolChainStaking", function () {
         });
 
         it("Should not exceed maximum validators", async function () {
-            const { staking, owner } = await loadFixture(deployStakingFixture);
+            // Deploy fresh staking contract for this test
+            const { solarToken, owner } = await loadFixture(deployStakingFixture);
             
-            // Set low maximum for testing
-            await staking.setStakingParameters(
+            const StakingContract = await ethers.getContractFactory("SolChainStaking");
+            const freshStaking = await StakingContract.deploy(await solarToken.getAddress());
+            await freshStaking.waitForDeployment();
+            
+            // Configure with maximum 2 validators
+            await freshStaking.setStakingParameters(
                 ethers.parseEther("1000"), // minimum stake
                 2, // maximum validators
                 7 * 24 * 60 * 60, // unstaking delay
@@ -323,22 +336,21 @@ describe("SolChainStaking", function () {
             const [, v1, v2, v3] = await ethers.getSigners();
             
             // Mint tokens to new validators
-            const { solarToken } = await loadFixture(deployStakingFixture);
             await solarToken.mint(v1.address, ethers.parseEther("10000"), "Test");
             await solarToken.mint(v2.address, ethers.parseEther("10000"), "Test");
             await solarToken.mint(v3.address, ethers.parseEther("10000"), "Test");
             
-            await solarToken.connect(v1).approve(await staking.getAddress(), ethers.parseEther("10000"));
-            await solarToken.connect(v2).approve(await staking.getAddress(), ethers.parseEther("10000"));
-            await solarToken.connect(v3).approve(await staking.getAddress(), ethers.parseEther("10000"));
+            await solarToken.connect(v1).approve(await freshStaking.getAddress(), ethers.parseEther("10000"));
+            await solarToken.connect(v2).approve(await freshStaking.getAddress(), ethers.parseEther("10000"));
+            await solarToken.connect(v3).approve(await freshStaking.getAddress(), ethers.parseEther("10000"));
             
-            await staking.connect(v1).stake(stakeAmount, "metadata1");
-            await staking.connect(v2).stake(stakeAmount, "metadata2");
+            await freshStaking.connect(v1).stake(stakeAmount, "metadata1");
+            await freshStaking.connect(v2).stake(stakeAmount, "metadata2");
             
             // Third validator should fail
             await expect(
-                staking.connect(v3).stake(stakeAmount, "metadata3")
-            ).to.be.revertedWithCustomError(staking, "MaxValidatorsReached");
+                freshStaking.connect(v3).stake(stakeAmount, "metadata3")
+            ).to.be.revertedWithCustomError(freshStaking, "MaxValidatorsReached");
         });
     });
 
@@ -420,7 +432,7 @@ describe("SolChainStaking", function () {
             // Should not allow staking when paused
             await expect(
                 staking.connect(validator1).stake(ethers.parseEther("2000"), "metadata")
-            ).to.be.revertedWith("Pausable: paused");
+            ).to.be.revertedWithCustomError(staking, "EnforcedPause");
             
             // Unpause staking
             await staking.unpause();

@@ -84,7 +84,7 @@
     "id": "2504",
     "username": "BinaA",
     "address": "chalkpota,sherpur,Bogura",
-    "buying": false,
+    "buying": true,
     "rate": "0.24 SOL/kWh",
     "email": "bina@example.com",
     "passwordHash": "$2b$10$daPQpE3YdMzIFo8x1DKa5uyfh.0F3o5n5FEmBZ5GykKOqnLPIx/2q",

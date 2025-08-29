@@ -32,31 +32,27 @@ async function main() {
         deployedContracts.SolarToken = await solarToken.getAddress();
         console.log(`✅ SolarToken deployed to: ${deployedContracts.SolarToken}\n`);
 
-        // 2. Deploy SolChainTimelock
-        console.log("⏰ Deploying SolChainTimelock...");
-        const SolChainTimelock = await ethers.getContractFactory("SolChainTimelock");
-        const timelock = await SolChainTimelock.deploy(
-            TIMELOCK_DELAY,
-            [], // proposers (will be set to governance)
-            [], // executors (will be set to governance)
-            deployer.address // initial admin
-        );
-        await timelock.waitForDeployment();
-        deployedContracts.SolChainTimelock = await timelock.getAddress();
-        console.log(`✅ SolChainTimelock deployed to: ${deployedContracts.SolChainTimelock}\n`);
-
-        // 3. Deploy SolChainGovernance
+        // 2. Deploy SolChainGovernance
         console.log("🏛️ Deploying SolChainGovernance...");
         const SolChainGovernance = await ethers.getContractFactory("SolChainGovernance");
+        
+        // Create governance config
+        const governanceConfig = {
+            votingDelay: 1, // 1 block delay
+            votingPeriod: 45818, // ~1 week in blocks (assuming 13.2s per block)
+            proposalThreshold: ethers.parseEther("1000"), // 1000 ST tokens needed to propose
+            quorumPercentage: 4 // 4% quorum
+        };
+        
         const governance = await SolChainGovernance.deploy(
             await solarToken.getAddress(),
-            await timelock.getAddress()
+            governanceConfig
         );
         await governance.waitForDeployment();
         deployedContracts.SolChainGovernance = await governance.getAddress();
         console.log(`✅ SolChainGovernance deployed to: ${deployedContracts.SolChainGovernance}\n`);
 
-        // 4. Deploy SolChainStaking
+        // 3. Deploy SolChainStaking
         console.log("🔒 Deploying SolChainStaking...");
         const SolChainStaking = await ethers.getContractFactory("SolChainStaking");
         const staking = await SolChainStaking.deploy(
@@ -66,7 +62,7 @@ async function main() {
         deployedContracts.SolChainStaking = await staking.getAddress();
         console.log(`✅ SolChainStaking deployed to: ${deployedContracts.SolChainStaking}\n`);
 
-        // 5. Deploy SolChainOracle
+        // 4. Deploy SolChainOracle
         console.log("🔮 Deploying SolChainOracle...");
         const SolChainOracle = await ethers.getContractFactory("SolChainOracle");
         const oracle = await SolChainOracle.deploy();
@@ -74,7 +70,7 @@ async function main() {
         deployedContracts.SolChainOracle = await oracle.getAddress();
         console.log(`✅ SolChainOracle deployed to: ${deployedContracts.SolChainOracle}\n`);
 
-        // 6. Deploy EnergyTrading
+        // 5. Deploy EnergyTrading
         console.log("⚡ Deploying EnergyTrading...");
         const EnergyTrading = await ethers.getContractFactory("EnergyTrading");
         const energyTrading = await EnergyTrading.deploy(
@@ -88,22 +84,18 @@ async function main() {
         // Configuration Phase
         console.log("⚙️  Starting Configuration Phase...\n");
 
-        // Configure Timelock roles
-        console.log("🔐 Configuring Timelock roles...");
-        const PROPOSER_ROLE = await timelock.PROPOSER_ROLE();
-        const EXECUTOR_ROLE = await timelock.EXECUTOR_ROLE();
-        const TIMELOCK_ADMIN_ROLE = await timelock.TIMELOCK_ADMIN_ROLE();
-
-        await timelock.grantRole(PROPOSER_ROLE, await governance.getAddress());
-        await timelock.grantRole(EXECUTOR_ROLE, await governance.getAddress());
-        await timelock.grantRole(EXECUTOR_ROLE, ethers.ZeroAddress); // Allow anyone to execute
-        console.log("✅ Timelock roles configured\n");
-
         // Configure SolarToken roles
         console.log("🪙 Configuring SolarToken roles...");
         const MINTER_ROLE = await solarToken.MINTER_ROLE();
         await solarToken.grantRole(MINTER_ROLE, await energyTrading.getAddress());
         await solarToken.grantRole(MINTER_ROLE, await staking.getAddress());
+        // Grant MINTER_ROLE to deployer for API operations
+        await solarToken.grantRole(MINTER_ROLE, deployer.address);
+        console.log(`   ✅ MINTER_ROLE granted to deployer: ${deployer.address}`);
+        
+        // Whitelist contracts to avoid transfer fees
+        await solarToken.addToWhitelist(await energyTrading.getAddress());
+        await solarToken.addToWhitelist(await staking.getAddress());
         console.log("✅ SolarToken roles configured\n");
 
         // Configure EnergyTrading parameters
@@ -134,6 +126,16 @@ async function main() {
             100, // 100% weight
             "Default data feed"
         );
+        
+        // Grant DATA_FEED_ROLE to deployer for price updates
+        const DATA_FEED_ROLE = await oracle.DATA_FEED_ROLE();
+        await oracle.grantRole(DATA_FEED_ROLE, deployer.address);
+        
+        // Set initial price data for testing (very close to constructor default: 0.008 ETH)
+        // Constructor sets 8 * 10^15 wei (0.008 ETH), let's set 7.5 finney (0.0075 ETH) for 6.25% deviation
+        const initialPrice = ethers.parseUnits("7.5", "finney"); // 7.5 finney = 0.0075 ETH per kWh
+        await oracle.updatePrice(initialPrice, 95);
+        console.log(`   📊 Set initial energy price: ${ethers.formatUnits(initialPrice, "ether")} ETH/kWh`);
         console.log("✅ Oracle configured\n");
 
         // Initialize some tokens for testing
@@ -158,8 +160,7 @@ async function main() {
                 tradingFeePercentage: TRADING_FEE_PERCENTAGE,
                 minimumTradeAmount: ethers.formatEther(MINIMUM_TRADE_AMOUNT),
                 maximumTradeAmount: ethers.formatEther(MAXIMUM_TRADE_AMOUNT),
-                minimumStake: ethers.formatEther(MINIMUM_STAKE),
-                timelockDelay: TIMELOCK_DELAY
+                minimumStake: ethers.formatEther(MINIMUM_STAKE)
             }
         };
 

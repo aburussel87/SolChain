@@ -141,6 +141,44 @@ export default function BuyEnergyScreen() {
 };
 
 
+  const executePurchase = async (seller) => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      
+      // Extract energy amount from availableUnits (e.g., "100 kWh" -> "100")
+      const energyAmount = seller.availableUnits.split(' ')[0];
+      
+      const response = await fetch(`${config.API_BASE_URL}/buy/offer`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          offerId: seller.id,
+          energyAmount: energyAmount
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        Alert.alert(
+          translations[language].purchaseSuccessful, 
+          `${translations[language].purchaseMessage}\n\nTransaction Hash: ${data.data.transactionHash?.substring(0, 10)}...`
+        );
+        
+        // Refresh the sellers list
+        fetchSellers();
+      } else {
+        Alert.alert("Error", data.error || "Failed to complete purchase");
+      }
+    } catch (error) {
+      console.error("Error executing purchase:", error);
+      Alert.alert("Error", "Failed to complete purchase. Check your network connection.");
+    }
+  };
+
   const renderSellerList = ({ item }) => (
     <View style={styles.card}>
       <View style={styles.cardHeader}>

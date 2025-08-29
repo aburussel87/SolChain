@@ -3,6 +3,7 @@ const router = express.Router();
 const jwt = require("jsonwebtoken");
 const fs = require("fs");
 const path = require("path");
+const blockchainService = require("../services/BlockchainService");
 
 // Dummy data for market demand
 const DUMMY_DEMAND = {
@@ -118,7 +119,7 @@ router.get("/", authenticateToken, (req, res) => {
 // });
 
 // --- POST energy to market ---
-router.post("/onMarket", authenticateToken, (req, res) => {
+router.post("/onMarket", authenticateToken, async (req, res) => {
   const user = req.user;
   const { amount, price } = req.body;
 
@@ -129,10 +130,13 @@ router.post("/onMarket", authenticateToken, (req, res) => {
   const userIndex = usersArr.findIndex(u => u.id === user.id);
   const realtimeIndex = realtimeArr.findIndex(r => r.userId === user.id);
 
+  
+
   if (userIndex === -1 || realtimeIndex === -1) {
     return res.status(404).json({ success: false, error: "User not found" });
   }
 
+  
   const available = realtimeArr[realtimeIndex].available;
   const currentOnMarket = realtimeArr[realtimeIndex].onMarket || 0;
 
@@ -140,6 +144,30 @@ router.post("/onMarket", authenticateToken, (req, res) => {
     return res.status(400).json({
       success: false,
       message: `Cannot list ${amount} kWh. Available: ${available} kWh`,
+    });
+  }
+
+  // Call blockchain service to create sell offer
+  try {
+    const blockchainResult = await blockchainService.createSellOffer(user.id, {
+      energyAmount: amount.toString(),
+      pricePerKwh: price.toString(),
+      duration: 24, // hardcoded
+      location: 'Grid-Zone-A', // hardcoded
+      energySource: 'Solar' // hardcoded
+    });
+
+    if (!blockchainResult.success) {
+      return res.status(500).json({
+        success: false,
+        error: "Blockchain transaction failed: " + blockchainResult.error
+      });
+    }
+  } catch (error) {
+    console.error("Blockchain error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Blockchain service error: " + error.message
     });
   }
 

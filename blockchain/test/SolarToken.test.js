@@ -95,17 +95,32 @@ describe("SolarToken", function () {
 
     describe("Transfer Fees", function () {
         it("Should apply transfer fees", async function () {
-            const { solarToken, owner, user1, feeCollector } = await loadFixture(deploySolarTokenFixture);
+            const { solarToken, owner, user1, user2, feeCollector } = await loadFixture(deploySolarTokenFixture);
             
+            // Remove both owner and user1 from whitelist to test fees
+            await solarToken.removeFromWhitelist(owner.address);
+            
+            // Give user1 some tokens (this transfer will have fees since owner is not whitelisted)
+            const initialAmount = ethers.parseEther("2000");
+            const initialFee = (initialAmount * BigInt(25)) / BigInt(10000); // 0.25% fee
+            const userReceives = initialAmount - initialFee;
+            
+            await solarToken.transfer(user1.address, initialAmount);
+            expect(await solarToken.balanceOf(user1.address)).to.equal(userReceives);
+            
+            // Now test transfer from user1 to user2 (both non-whitelisted)
             const transferAmount = ethers.parseEther("1000");
             const feePercentage = await solarToken.transferFeePercentage();
             const expectedFee = (transferAmount * BigInt(feePercentage)) / BigInt(10000);
             const expectedTransfer = transferAmount - expectedFee;
             
-            await solarToken.transfer(user1.address, transferAmount);
+            const feeCollectorBalanceBefore = await solarToken.balanceOf(feeCollector.address);
             
-            expect(await solarToken.balanceOf(user1.address)).to.equal(expectedTransfer);
-            expect(await solarToken.balanceOf(feeCollector.address)).to.equal(expectedFee);
+            await solarToken.connect(user1).transfer(user2.address, transferAmount);
+            
+            expect(await solarToken.balanceOf(user2.address)).to.equal(expectedTransfer);
+            const feeCollectorBalanceAfter = await solarToken.balanceOf(feeCollector.address);
+            expect(feeCollectorBalanceAfter - feeCollectorBalanceBefore).to.equal(expectedFee);
         });
 
         it("Should not apply fees to whitelisted addresses", async function () {
@@ -163,7 +178,7 @@ describe("SolarToken", function () {
             // Transfers should be paused
             await expect(
                 solarToken.transfer(user1.address, ethers.parseEther("100"))
-            ).to.be.revertedWith("Pausable: paused");
+            ).to.be.revertedWithCustomError(solarToken, "EnforcedPause");
             
             // Unpause the contract
             await solarToken.unpause();
@@ -238,7 +253,7 @@ describe("SolarToken", function () {
             const initialBalance = await ethers.provider.getBalance(owner.address);
             
             // Emergency withdraw
-            await solarToken.emergencyWithdraw(ethers.ZeroAddress, ethers.parseEther("1"));
+            await solarToken.emergencyWithdraw(ethers.ZeroAddress, owner.address, ethers.parseEther("1"));
             
             // Check balance increased (minus gas)
             const finalBalance = await ethers.provider.getBalance(owner.address);

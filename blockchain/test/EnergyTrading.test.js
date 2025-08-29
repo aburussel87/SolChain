@@ -24,6 +24,9 @@ describe("EnergyTrading", function () {
         const MINTER_ROLE = await solarToken.MINTER_ROLE();
         await solarToken.grantRole(MINTER_ROLE, await energyTrading.getAddress());
         
+        // Whitelist the energy trading contract to avoid transfer fees
+        await solarToken.addToWhitelist(await energyTrading.getAddress());
+        
         // Grant dispute resolver role
         const DISPUTE_RESOLVER_ROLE = await energyTrading.DISPUTE_RESOLVER_ROLE();
         await energyTrading.grantRole(DISPUTE_RESOLVER_ROLE, disputeResolver.address);
@@ -502,7 +505,7 @@ describe("EnergyTrading", function () {
                     "Grid-1",
                     "Solar"
                 )
-            ).to.be.revertedWith("Pausable: paused");
+            ).to.be.revertedWithCustomError(energyTrading, "EnforcedPause");
             
             // Resume trading
             await energyTrading.resumeTrading();

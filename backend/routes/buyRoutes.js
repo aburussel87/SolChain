@@ -4,6 +4,7 @@ const jwt = require("jsonwebtoken");
 const fs = require("fs");
 const path = require("path");
 const { use } = require("react");
+const blockchainService = require("../services/BlockchainService");
 
 // Helper to read JSON files
 function getJsonData(filename) {
@@ -65,7 +66,7 @@ router.get("/", authenticateToken, (req, res) => {
   });
 });
 
-router.post("/buyNow", authenticateToken, (req, res) => {
+router.post("/buyNow", authenticateToken, async (req, res) => {
   const buyer = req.user;
   const { sellerId, amount, rate } = req.body;
 
@@ -94,6 +95,30 @@ router.post("/buyNow", authenticateToken, (req, res) => {
     return res.status(400).json({
       success: false,
       error: `Cannot buy ${amount} kWh. Seller has only ${available} kWh available.`,
+    });
+  }
+
+  // Call blockchain service to create buy offer
+  try {
+    const blockchainResult = await blockchainService.createBuyOffer(buyer.id, {
+      energyAmount: amount.toString(),
+      pricePerKwh: rate.toString(),
+      duration: 24, // hardcoded
+      location: 'Grid-Zone-A', // hardcoded
+      energySource: 'Solar' // hardcoded
+    });
+
+    if (!blockchainResult.success) {
+      return res.status(500).json({
+        success: false,
+        error: "Blockchain transaction failed: " + blockchainResult.error
+      });
+    }
+  } catch (error) {
+    console.error("Blockchain error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Blockchain service error: " + error.message
     });
   }
 

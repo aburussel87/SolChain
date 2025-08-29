@@ -90,10 +90,20 @@ class SolChainConfig {
      */
     loadDeployedAddresses(network = "hardhat") {
         try {
+            // First try network-specific file
             const deploymentsPath = path.join(__dirname, "../deployments", `${network}.json`);
             if (fs.existsSync(deploymentsPath)) {
                 return JSON.parse(fs.readFileSync(deploymentsPath, "utf8"));
             }
+            
+            // Fallback to latest.json
+            const latestPath = path.join(__dirname, "../deployments", "latest.json");
+            if (fs.existsSync(latestPath)) {
+                const latestDeployment = JSON.parse(fs.readFileSync(latestPath, "utf8"));
+                // Return just the contracts section for compatibility
+                return latestDeployment.contracts || latestDeployment;
+            }
+            
             return {};
         } catch (error) {
             console.warn(`Could not load deployed addresses for ${network}:`, error.message);
@@ -278,6 +288,9 @@ class SolChainConfig {
 
             const config = this.getAPIConfig(network, accountIndex, contractAddresses);
             const api = new SolChainAPI(config);
+            
+            // Initialize the API provider
+            await api.initialize();
             
             const initResult = await api.initializeContracts(contractAddresses);
             if (!initResult.success) {
